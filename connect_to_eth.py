@@ -33,12 +33,10 @@ def connect_with_middleware(contract_json):
 	# create a contract object. Read more on the docs pages at https://web3py.readthedocs.io/en/stable/middleware.html
 	# and https://web3py.readthedocs.io/en/stable/web3.contract.html
 	# Extract ABI and address
-	contract = w3.eth.contract(address, abi)
+	contract = w3.eth.contract(address=address, abi=abi)
 
 	return w3, contract
 
 
 if __name__ == "__main__":
-	w3=connect_to_eth()
-	w3.is_connected()
-	w3.eth.get_block('latest')
+	connect_to_eth()
