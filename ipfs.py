@@ -16,7 +16,7 @@ def pin_to_ipfs(data):
 	if response.status_code != 200:
 		raise Exception(f"Pinata upload failed: {response.text}")
 
-	return response.json()["Hash"]
+	return response.json()["IpfsHash"]
 
 def get_from_ipfs(cid,content_type="json"):
 	assert isinstance(cid,str), f"get_from_ipfs accepts a cid in the form of a string"
