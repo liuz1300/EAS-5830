@@ -3,22 +3,24 @@ import json
 
 def pin_to_ipfs(data):
 	assert isinstance(data,dict), f"Error pin_to_ipfs expects a dictionary"
-	url = "http://127.0.0.1:5001/api/v0/add"
+	url = "https://api.pinata.cloud/pinning/pinJSONToIPFS"
 
-	files = {
-		"file": ("data.json", json.dumps(data))
+	headers = {
+		"pinata_api_key": e30e72100b8dadc81c23,
+		"pinata_secret_api_key": d7bb6c5290d223c6de3915b77d94b3e75025ec656398f8d5358b51c4f49ef8d6,
+		"Content-Type": "application/json"
 	}
 
-	response = requests.post(url, files=files)
+	response = requests.post(url, headers=headers, data=json.dumps(data))
 
 	if response.status_code != 200:
-		raise Exception(f"IPFS upload failed: {response.text}")
+		raise Exception(f"Pinata upload failed: {response.text}")
 
 	return response.json()["Hash"]
 
 def get_from_ipfs(cid,content_type="json"):
 	assert isinstance(cid,str), f"get_from_ipfs accepts a cid in the form of a string"
-	url = f"http://127.0.0.1:8080/ipfs/{cid}"
+	url = f"https://gateway.pinata.cloud/ipfs/{cid}"
 
 	response = requests.get(url)
 
