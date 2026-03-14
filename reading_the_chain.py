@@ -53,6 +53,101 @@ def is_ordered_block(w3, block_num):
 	Conveniently, most type 2 transactions set the gasPrice field to be min( tx.maxPriorityFeePerGas + block.baseFeePerGas, tx.maxFeePerGas )
 	"""
 	block = w3.eth.get_block(block_num, full_transactions=True)
+	txs = block.transactions
+
+	if len(txs) <= 1:
+		return True
+
+	effective_gas_prices = []
+	for tx in txs:
+		# Post-EIP-1559 tx has maxPriorityFeePerGas and maxFeePerGas
+		if 'maxPriorityFeePerGas' in tx and tx['maxPriorityFeePerGas'] is not None:
+			base_fee = block.get('baseFeePerGas', 0)
+			effective_price = min(tx['maxFeePerGas'], base_fee + tx['maxPriorityFeePerGas'])
+		else:
+			# Pre-EIP-1559 tx
+			effective_price = tx['gasPrice']
+		effective_gas_prices.append(effective_price)
+
+	# Check if list is descending
+	for i in range(len(effective_gas_prices) - 1):
+		if effective_gas_prices[i] < effective_gas_prices[i + 1]:
+			return False
+	return True
+
+def get_contract_values(contract, admin_address, owner_address):
+	"""
+	Takes a contract object, and two addresses (as strings) to be used for calling
+	the contract to check current on chain values.
+	The provided "default_admin_role" is the correctly formatted solidity default
+	admin value to use when checking with the contract
+	To complete this method you need to make three calls to the contract to get:
+	  onchain_root: Get and return the merkleRoot from the provided contract
+	  has_role: Verify that the address "admin_address" has the role "default_admin_role" return True/False
+	  prime: Call the contract to get and return the prime owned by "owner_address"
+
+	check on available contract functions and transactions on the block explorer at
+	https://testnet.bscscan.com/address/0xaA7CAaDA823300D18D3c43f65569a47e78220073
+	"""
+	default_admin_role = int.to_bytes(0, 32, byteorder="big")
+
+	# TODO complete the following lines by performing contract calls
+	onchain_root = contract.functions.merkleRoot().call()
+	# Get and return the merkleRoot from the provided contract
+	has_role = contract.functions.hasRole(default_admin_role, admin_address).call()
+	# Check the contract to see if the address "admin_address" has the role "default_admin_role"
+	prime = contract.functions.getPrimeByOwner(owner_address).call()
+	# Call the contract to get the prime owned by "owner_address"
+
+	return onchain_root, has_role, prime
+
+
+"""
+	This might be useful for testing (main is not run by the grader feel free to change 
+	this code anyway that is helpful)
+"""
+if __name__ == "__main__":
+	# These are addresses associated with the Merkle contract (check on contract
+	# functions and transactions on the block explorer at
+	# https://testnet.bscscan.com/address/0xaA7CAaDA823300D18D3c43f65569a47e78220073
+	admin_address = "0xAC55e7d73A792fE1A9e051BDF4A010c33962809A"
+	owner_address = "0x793A37a85964D96ACD6368777c7C7050F05b11dE"
+	contract_file = "contract_info.json"
+
+	eth_w3 = connect_to_eth()
+	cont_w3, contract = connect_with_middleware(contract_file)
+
+	latest_block = eth_w3.eth.get_block_number()
+	london_hard_fork_block_num = 12965000
+	assert latest_block > london_hard_fork_block_num, f"Error: the chain never got past the London Hard Fork"
+
+	n = 5
+	for _ in range(n):
+		block_num = random.randint(1, latest_block)
+		ordered = is_ordered_block(cont_w3,block_num)
+		if ordered:
+			print(f"Block {block_num} is ordered")
+		else:
+			print(f"Block {block_num} is not ordered")
+	w3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)
+	contract = w3.eth.contract(address=address, abi=abi)
+
+	return w3, contract
+
+def is_ordered_block(w3, block_num):
+	"""
+	Takes a block number
+	Returns a boolean that tells whether all the transactions in the block are ordered by priority fee
+
+	Before EIP-1559, a block is ordered if and only if all transactions are sorted in decreasing order of the gasPrice field
+
+	After EIP-1559, there are two types of transactions
+		*Type 0* The priority fee is tx.gasPrice - block.baseFeePerGas
+		*Type 2* The priority fee is min( tx.maxPriorityFeePerGas, tx.maxFeePerGas - block.baseFeePerGas )
+
+	Conveniently, most type 2 transactions set the gasPrice field to be min( tx.maxPriorityFeePerGas + block.baseFeePerGas, tx.maxFeePerGas )
+	"""
+	block = w3.eth.get_block(block_num, full_transactions=True)
 	transactions = block.transactions
 
 	# If block has 0 or 1 tx, trivially ordered
