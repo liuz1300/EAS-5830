@@ -63,6 +63,10 @@ def is_ordered_block(w3, block_num):
 	# Some legacy transactions may not have this field
 	priority_fees = []
 	for tx in transactions:
+		if 'maxPriorityFeePerGas' in tx:
+			# maxPriorityFeePerGas is in wei
+			priority_fees.append(tx['maxPriorityFeePerGas'])
+		else:
 			# Legacy tx → priority fee = 0
 			priority_fees.append(0)
 
@@ -94,7 +98,7 @@ def get_contract_values(contract, admin_address, owner_address):
 	# Get and return the merkleRoot from the provided contract
 	has_role = contract.functions.hasRole(default_admin_role, admin_address).call()
 	# Check the contract to see if the address "admin_address" has the role "default_admin_role"
-	prime = contract.functions.prime(owner_address).call()
+	prime = contract.functions.getPrimeByOwner(owner_address).call()
 	# Call the contract to get the prime owned by "owner_address"
 
 	return onchain_root, has_role, prime
