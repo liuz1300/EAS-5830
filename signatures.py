@@ -7,13 +7,12 @@ def sign(m):
 
     # TODO create an account for signing the message
     account_object = Account.create()  # Create an Eth account
-    private_key = account_object.key.hex()  # Eth account private key
+    private_key = account_object.key  # Eth account private key
     public_key = account_object.address  # Eth account public key
-    private_key_bytes = bytes.fromhex(private_key[2:])
 
     # TODO sign the given message "m"
     message = encode_defunct(text=m)  # Encode the message
-    signed_message = Account.sign_message(message, private_key=private_key_bytes)  # Sign the message
+    signed_message = Account.sign_message(message, private_key=private_key)  # Sign the message
 
 
     """You can save the account public/private keypair that prints in the next section
