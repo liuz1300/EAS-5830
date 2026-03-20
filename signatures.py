@@ -1,12 +1,12 @@
 from web3 import Web3
-from eth_account import Account
+import eth_account
 from eth_account.messages import encode_defunct
 
 def sign(m):
     w3 = Web3()
 
     # TODO create an account for signing the message
-    account_object = Account.create()  # Create an Eth account
+    account_object = eth_account.create()  # Create an Eth account
     private_key = account_object.key  # Eth account private key
     public_key = account_object.address  # Eth account public key
 
@@ -33,7 +33,7 @@ def verify(m, public_key, signed_message):
 
     # TODO verify the 'signed_message' is valid given the original message 'm' and the signers 'public_key'
     message = encode_defunct(text=m)  # Encode the message
-    signer = Account.recover_message(message, signature=signature)  # Verify the message
+    signer = eth_account.recover_message(message, signature=signature)  # Verify the message
     valid_signature = public_key.lower() == signer.lower()  # True if message verifies, False if message does not verify
 
     assert isinstance(valid_signature, bool), "verify should return a boolean value"
