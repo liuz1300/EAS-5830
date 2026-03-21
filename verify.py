@@ -1,7 +1,8 @@
 from web3 import Web3
 from eth_account.messages import encode_defunct
 import random
-
+import os
+import json
 
 def sign_challenge(challenge):
     w3 = Web3()
@@ -15,7 +16,7 @@ def sign_challenge(challenge):
 
     acct = w3.eth.account.from_key(sk)
 
-    signed_message = w3.eth.account.sign_message(challenge, private_key=sk)
+    signed_message = w3.eth.account.sign_message(challenge, private_key=acct.key)
 
     return acct.address, signed_message.signature
 
@@ -37,9 +38,6 @@ def verify_sig():
 
 
 if __name__ == '__main__':
-    """
-        Test your function
-    """
     if verify_sig():
         print(f"You passed the challenge!")
     else:
