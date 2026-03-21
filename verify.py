@@ -12,7 +12,7 @@ def sign_challenge(challenge):
     prove that you have claimed your NFT.
 
     This is the only line you need to modify in this file before you submit """
-    sk = "0a5650b2d5f779251e3eebebbd37b38d2fcf0e6458c6c2c5f80aa436dcece48f"
+    sk = "0x94441e13726226650cf7e654ef93006155857e76e4f4f130734962e9427df0a4"
 
     acct = w3.eth.account.from_key(sk)
 
