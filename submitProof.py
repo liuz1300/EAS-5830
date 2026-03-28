@@ -131,32 +131,34 @@ def sign_challenge(challenge):
 
 
 def send_signed_msg(proof, random_leaf):
-    """
-        Takes a Merkle proof of a leaf, and that leaf (in bytes32 format)
-        builds signs and sends a transaction claiming that leaf (prime)
-        on the contract
-    """
     chain = 'bsc'
 
     acct = get_account()
     address, abi = get_contract_info(chain)
     w3 = connect_to(chain)
 
-    # TODO YOUR CODE HERE
-
     contract = w3.eth.contract(address=address, abi=abi)
+
+    # Ensure proof is list of bytes32
+    proof_bytes32 = [p for p in proof]
+
+    # random_leaf is already bytes32 from convert_leaves
+    leaf_bytes32 = random_leaf
 
     nonce = w3.eth.get_transaction_count(acct.address)
 
-    tx = contract.functions.claim(random_leaf, proof).build_transaction({
+    # Build transaction
+    tx = contract.functions.submit(proof_bytes32, leaf_bytes32).build_transaction({
         'from': acct.address,
         'nonce': nonce,
         'gas': 200000,
         'gasPrice': w3.to_wei('10', 'gwei')
     })
 
+    # Sign transaction
     signed_tx = w3.eth.account.sign_transaction(tx, private_key=acct.key)
 
+    # Send transaction
     tx_hash = w3.eth.send_raw_transaction(signed_tx.rawTransaction)
 
     return tx_hash.hex()
