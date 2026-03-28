@@ -21,27 +21,27 @@ contract Destination is AccessControl {
         _grantRole(CREATOR_ROLE, admin);
         _grantRole(WARDEN_ROLE, admin);
     }
- 
+
  /// @notice Create a new wrapped token on the destination chain
+    /// @notice Deploy a new wrapped token on the destination chain
     function createToken(
-        address _underlying_token, // address on the source chain
+        address _underlying_token,
         string memory name,
         string memory symbol
-    ) public onlyRole(CREATOR_ROLE) returns(address) {
+    ) public onlyRole(CREATOR_ROLE) returns (address) {
         require(_underlying_token != address(0), "Underlying token required");
-        require(wrapped_tokens[_underlying_token] == address(0), "Token already registered");
 
-        // Deploy a new BridgeToken on destination chain
+        // Deploy a new BridgeToken contract
         BridgeToken token = new BridgeToken(_underlying_token, name, symbol, address(this));
 
-        // Register mappings
-        wrapped_tokens[_underlying_token] = address(token);   // source → destination
-        underlying_tokens[address(token)] = _underlying_token; // destination → source
+        // store mapping
+        wrapped_tokens[_underlying_token] = address(token);
+        underlying_tokens[address(token)] = _underlying_token;
 
-        // Add to array for iteration / UI
-        tokens.push(address(token));
-
+        // Emit an event to announce the new token
         emit Creation(_underlying_token, address(token));
+
+        // Return the address of the newly created token
         return address(token);
     }
 
@@ -58,18 +58,23 @@ contract Destination is AccessControl {
         emit Wrap(_underlying_token, _recipient, _amount);
     }
 
-    /// @notice Burn wrapped tokens to release underlying on the source chain
-    function unwrap(
-        address _wrapped_token, // destination token
-        address _recipient,
-        uint256 _amount
-    ) public {
-        address underlying = underlying_tokens[_wrapped_token];
-        require(underlying != address(0), "Wrapped token not registered");
+function unwrap(
+    address _wrapped_token,
+    address _recipient,  // source chain address
+    uint256 _amount
+) public {
+    require(_wrapped_token != address(0), "Wrapped token required");
+    require(_recipient != address(0), "Recipient required");
+    require(_amount > 0, "Amount must be > 0");
 
-        BridgeToken(_wrapped_token).burnFrom(msg.sender, _amount);
-        emit Unwrap(_wrapped_token, _recipient, _amount);
-    }
+    BridgeToken token = BridgeToken(_wrapped_token);
+
+    // Burn tokens from the caller (msg.sender)
+    token.burnFrom(_recipient, _amount);
+
+    // Emit event so source chain knows who receives original tokens
+    emit Unwrap(_wrapped_token, _recipient, _amount);
+}
 
     /// @notice Return the number of wrapped tokens created
     function totalTokens() public view returns (uint256) {
