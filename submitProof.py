@@ -2,6 +2,7 @@ import eth_account
 import random
 import string
 import json
+from eth_account.messages import encode_defunct
 from pathlib import Path
 from web3 import Web3
 from web3.middleware import ExtraDataToPOAMiddleware  # Necessary for POA chains
@@ -25,7 +26,7 @@ def merkle_assignment():
     tree = build_merkle(leaves)
 
     # Select a random leaf and create a proof for that leaf
-    random_leaf_index = 538
+    random_leaf_index = 53
     proof = prove_merkle(tree, random_leaf_index)
 
     # This is the same way the grader generates a challenge for sign_challenge()
@@ -123,8 +124,8 @@ def sign_challenge(challenge):
     eth_sk = acct.key
 
     # TODO YOUR CODE HERE
-    eth_encoded_msg = acct.messages.encode_defunct(text=challenge)
-    eth_sig_obj = acct.Account.sign_message(eth_encoded_msg, private_key=eth_sk)
+    eth_encoded_msg = eth_account.messages.encode_defunct(text=challenge)
+    eth_sig_obj = eth_account.Account.sign_message(eth_encoded_msg, private_key=eth_sk)
 
     return addr, eth_sig_obj.signature.hex()
 
