@@ -123,8 +123,8 @@ def sign_challenge(challenge):
     eth_sk = acct.key
 
     # TODO YOUR CODE HERE
-    eth_encoded_msg = eth_account.messages.encode_defunct(text=challenge)
-    eth_sig_obj = eth_account.Account.sign_message(eth_encoded_msg, private_key=eth_sk)
+    eth_encoded_msg = acct.messages.encode_defunct(text=challenge)
+    eth_sig_obj = acct.Account.sign_message(eth_encoded_msg, private_key=eth_sk)
 
     return addr, eth_sig_obj.signature.hex()
 
