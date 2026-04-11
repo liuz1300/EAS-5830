@@ -79,3 +79,17 @@ def scan_blocks(chain, start_block, end_block, contract_address, eventfile='depo
                     "address": event['address']
                 }
                 rows.append(row)
+	
+		if len(rows) > 0:
+	        df = pd.DataFrame(rows)
+	
+	        file_path = Path(eventfile)
+
+        if file_path.exists():
+            df.to_csv(file_path, mode='a', header=False, index=False)
+        else:
+            df.to_csv(file_path, mode='w', header=True, index=False)
+
+        print(f"Saved {len(rows)} events to {eventfile}")
+    else:
+        print("No events found.")
