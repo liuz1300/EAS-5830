@@ -44,7 +44,7 @@ warden = Account.from_key(WARDEN_PRIVATE_KEY)
 def send_tx(w3, fn):
     tx = fn.build_transaction({
         "from": warden.address,
-        "nonce": w3.eth.get_transaction_count(warden.address),
+        "nonce": w3.eth.get_transaction_count(warden.address, "pending"),
         "gas": 300000,
         "gasPrice": w3.eth.gas_price
     })
