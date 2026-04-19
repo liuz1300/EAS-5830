@@ -27,7 +27,7 @@ def get_w3(chain):
 
 
 def send_tx(w3, fn):
-    nonce = w3.eth.get_transaction_count(ACCOUNT)
+    nonce = w3.eth.get_transaction_count(ACCOUNT,"pending")
 
     tx = fn.build_transaction({
         "from": ACCOUNT,
