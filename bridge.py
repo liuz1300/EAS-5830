@@ -47,6 +47,10 @@ def send_tx(w3, fn):
 
 def scan_blocks(chain, contract_info="contract_info.json"):
 
+    if chain not in ["source", "destination"]:
+        print(f"Invalid chain: {chain}")
+        return 0
+
     with open(contract_info) as f:
         data = json.load(f)
 
@@ -56,35 +60,47 @@ def scan_blocks(chain, contract_info="contract_info.json"):
     source_abi = data["source"]["abi"]
     dest_abi = data["destination"]["abi"]
 
-    w3 = get_w3(chain)
+    # choose chain config
+    w3_source = get_w3("avax")
+    w3_dest = get_w3("bsc")
 
     rows = []
 
-    # ================= SOURCE CHAIN (Deposit) =================
-    if chain == "avax":
+    # ================= SOURCE CHAIN =================
+    if chain == "source":
 
-        contract = w3.eth.contract(address=source_addr, abi=source_abi)
-        event_filter = contract.events.Deposit.create_filter(from_block="latest")
+        latest = w3_source.eth.block_number
+        from_block = max(latest - 5, 0)
 
-        for event in event_filter.get_new_entries():
+        contract = w3_source.eth.contract(address=source_addr, abi=source_abi)
 
-            rows.append(parse_event(event, chain))
+        events = contract.events.Deposit.get_logs(
+            from_block=from_block,
+            to_block=latest
+        )
 
+        for event in events:
+            rows.append(parse_event(event, "source"))
             handle_deposit(event, dest_addr, dest_abi)
 
-    # ================= DESTINATION CHAIN (Unwrap) =================
+    # ================= DESTINATION CHAIN =================
     else:
 
-        contract = w3.eth.contract(address=dest_addr, abi=dest_abi)
-        event_filter = contract.events.Unwrap.create_filter(from_block="latest")
+        latest = w3_dest.eth.block_number
+        from_block = max(latest - 5, 0)
 
-        for event in event_filter.get_new_entries():
+        contract = w3_dest.eth.contract(address=dest_addr, abi=dest_abi)
 
-            rows.append(parse_event(event, chain))
+        events = contract.events.Unwrap.get_logs(
+            from_block=from_block,
+            to_block=latest
+        )
 
+        for event in events:
+            rows.append(parse_event(event, "destination"))
             handle_unwrap(event, source_addr, source_abi)
 
-    # ================= SAVE CSV =================
+    # ================= CSV LOGGING =================
 
     if rows:
         df = pd.DataFrame(rows)
@@ -95,7 +111,9 @@ def scan_blocks(chain, contract_info="contract_info.json"):
         else:
             df.to_csv(file_path, mode="w", header=True, index=False)
 
-        print(f"[CSV] Saved {len(rows)} events")
+        print(f"[SCAN] {chain}: saved {len(rows)} events")
+
+    return len(rows)
 
 
 # ================= EVENT HANDLERS =================
