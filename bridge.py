@@ -5,6 +5,7 @@ import json
 import pandas as pd
 import time
 
+NONCE = None
 # ================= WALLET CONFIG =================
 
 PRIVATE_KEY = "d475ca0cd9c3e620b888ec34fb6a954439958230bbb0cdc44356e7b8a34e6f50"
@@ -27,19 +28,34 @@ def get_w3(chain):
 
 
 def send_tx(w3, fn):
-    nonce = w3.eth.get_transaction_count(ACCOUNT,"pending")
+    global NONCE
 
+    # Initialize nonce once (pending includes unmined txs)
+    if NONCE is None:
+        NONCE = w3.eth.get_transaction_count(ACCOUNT, "pending")
+
+    # Build transaction
     tx = fn.build_transaction({
         "from": ACCOUNT,
-        "nonce": nonce,
+        "nonce": NONCE,
         "gas": 300000,
-        "gasPrice": w3.to_wei("5", "gwei")
+        "gasPrice": w3.to_wei("10", "gwei")  # higher = avoids replacement issues
     })
 
+    # Sign transaction (Web3 v6 fix)
     signed = w3.eth.account.sign_transaction(tx, PRIVATE_KEY)
-    tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
+
+    # FIXED for Web3 v6+ compatibility
+    raw_tx = getattr(signed, "rawTransaction", None) or signed.raw_transaction
+
+    # Send transaction
+    tx_hash = w3.eth.send_raw_transaction(raw_tx)
 
     print("[TX SENT]", tx_hash.hex())
+
+    # Increment nonce ONLY after successful send
+    NONCE += 1
+
     return tx_hash.hex()
 
 
@@ -137,14 +153,14 @@ def handle_unwrap(event, source_addr, source_abi):
 
     print("[EVENT] Unwrap → withdraw()")
 
-    token = Web3.to_checksum_address(event["args"]["underlying_token"])
+    wrapped_token = Web3.to_checksum_address(event["args"]["wrapped_token"])
     recipient = Web3.to_checksum_address(event["args"]["to"])
     amount = int(event["args"]["amount"])
 
     w3 = get_w3("avax")
     contract = w3.eth.contract(address=source_addr, abi=source_abi)
 
-    fn = contract.functions.withdraw(token, recipient, amount)
+    fn = contract.functions.withdraw(wrapped_token, recipient, amount)
     send_tx(w3, fn)
 
 
