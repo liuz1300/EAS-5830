@@ -1,114 +1,90 @@
 from web3 import Web3
-from web3.providers.rpc import HTTPProvider
-from web3.middleware import ExtraDataToPOAMiddleware #Necessary for POA chains
-from datetime import datetime
+from web3.middleware import ExtraDataToPOAMiddleware
 import json
-import pandas as pd
 
 
+# =========================
+# CONNECT
+# =========================
 def connect_to(chain):
-    if chain == 'source':  # The source contract chain is avax
-        api_url = f"https://api.avax-test.network/ext/bc/C/rpc" #AVAX C-chain testnet
+    if chain == "source":
+        url = "https://api.avax-test.network/ext/bc/C/rpc"
+    elif chain == "destination":
+        url = "https://data-seed-prebsc-1-s1.binance.org:8545/"
+    else:
+        raise Exception("Invalid chain")
 
-    if chain == 'destination':  # The destination contract chain is bsc
-        api_url = f"https://data-seed-prebsc-1-s1.binance.org:8545/" #BSC testnet
-
-    if chain in ['source','destination']:
-        w3 = Web3(Web3.HTTPProvider(api_url))
-        # inject the poa compatibility middleware to the innermost layer
-        w3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)
+    w3 = Web3(Web3.HTTPProvider(url))
+    w3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)
     return w3
 
 
-def get_contract_info(chain, contract_info):
-    """
-        Load the contract_info file into a dictionary
-        This function is used by the autograder and will likely be useful to you
-    """
-    try:
-        with open(contract_info, 'r')  as f:
-            contracts = json.load(f)
-    except Exception as e:
-        print( f"Failed to read contract info\nPlease contact your instructor\n{e}" )
-        return 0
-    return contracts[chain]
+# =========================
+# LOAD CONTRACTS
+# =========================
+def get_contract_info(chain, file="contract_info.json"):
+    with open(file, "r") as f:
+        data = json.load(f)
+    return data[chain]
 
+
+# =========================
+# MAIN LISTENER (NO SIGNING)
+# =========================
 def scan_blocks(chain, contract_info="contract_info.json"):
+
     if chain not in ["source", "destination"]:
-        print(f"Invalid chain: {chain}")
+        print("Invalid chain")
         return 0
 
     w3 = connect_to(chain)
 
-    contracts = get_contract_info(chain, contract_info)
-    address = contracts["address"]
-    abi = contracts["abi"]
+    info = get_contract_info(chain, contract_info)
+    contract = w3.eth.contract(address=info["address"], abi=info["abi"])
 
-    contract = w3.eth.contract(address=address, abi=abi)
-
-    latest_block = w3.eth.block_number
-    start_block = max(0, latest_block - 5)
-
-    rows = []
+    latest = w3.eth.block_number
+    start = max(0, latest - 5)
 
     # =========================
-    # SOURCE CHAIN LOGIC
+    # SOURCE → DESTINATION
     # =========================
     if chain == "source":
+
         events = contract.events.Deposit.get_logs(
-            from_block=start_block,
-            to_block=latest_block
+            from_block=start,
+            to_block=latest
         )
 
-        for event in events:
-            token = event["args"]["token"]
-            recipient = event["args"]["recipient"]
-            amount = event["args"]["amount"]
+        for e in events:
+            token = e["args"]["token"]
+            recipient = e["args"]["recipient"]
+            amount = e["args"]["amount"]
 
-            print(f"[SOURCE] Deposit detected: {token}, {recipient}, {amount}")
-
-            dest = get_contract_info("destination", contract_info)
-            dest_contract = w3.eth.contract(
-                address=dest["address"],
-                abi=dest["abi"]
-            )
-
-            tx = dest_contract.functions.wrap(
-                token,
-                recipient,
-                amount
-            ).transact()
-
-            print(f"[DEST] wrap tx sent: {tx.hex()}")
+            print(f"[SOURCE] Deposit detected:")
+            print(f"  token={token}")
+            print(f"  recipient={recipient}")
+            print(f"  amount={amount}")
+            print("➡ ACTION REQUIRED: call wrap() on destination chain")
 
     # =========================
-    # DESTINATION CHAIN LOGIC
+    # DESTINATION → SOURCE
     # =========================
     if chain == "destination":
+
         events = contract.events.Unwrap.get_logs(
-            from_block=start_block,
-            to_block=latest_block
+            from_block=start,
+            to_block=latest
         )
 
-        for event in events:
-            token = event["args"]["underlying_token"]
-            recipient = event["args"]["to"]
-            amount = event["args"]["amount"]
+        for e in events:
+            token = e["args"]["underlying_token"]
+            recipient = e["args"]["to"]
+            amount = e["args"]["amount"]
 
-            print(f"[DEST] Unwrap detected: {token}, {recipient}, {amount}")
-
-            src = get_contract_info("source", contract_info)
-            src_contract = w3.eth.contract(
-                address=src["address"],
-                abi=src["abi"]
-            )
-
-            tx = src_contract.functions.withdraw(
-                token,
-                recipient,
-                amount
-            ).transact()
-
-            print(f"[SOURCE] withdraw tx sent: {tx.hex()}")
+            print(f"[DESTINATION] Unwrap detected:")
+            print(f"  token={token}")
+            print(f"  recipient={recipient}")
+            print(f"  amount={amount}")
+            print("➡ ACTION REQUIRED: call withdraw() on source chain")
 
     return 1
