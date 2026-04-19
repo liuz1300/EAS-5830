@@ -34,28 +34,17 @@ def get_contract_info(chain, contract_info):
     return contracts[chain]
 
 def scan_blocks(chain, contract_info="contract_info.json"):
-
-    if chain not in ['source', 'destination']:
+    if chain not in ["source", "destination"]:
         print(f"Invalid chain: {chain}")
         return 0
 
-    # load config
-    contracts = get_contract_info(chain, contract_info)
-
     w3 = connect_to(chain)
 
-    source = get_contract_info("source", contract_info)
-    dest = get_contract_info("destination", contract_info)
+    contracts = get_contract_info(chain, contract_info)
+    address = contracts["address"]
+    abi = contracts["abi"]
 
-    source_contract = connect_to("source").eth.contract(
-        address=source["address"],
-        abi=source["abi"]
-    )
-
-    dest_contract = connect_to("destination").eth.contract(
-        address=dest["address"],
-        abi=dest["abi"]
-    )
+    contract = w3.eth.contract(address=address, abi=abi)
 
     latest_block = w3.eth.block_number
     start_block = max(0, latest_block - 5)
@@ -63,11 +52,10 @@ def scan_blocks(chain, contract_info="contract_info.json"):
     rows = []
 
     # =========================
-    # SOURCE CHAIN (AVALANCHE)
+    # SOURCE CHAIN LOGIC
     # =========================
     if chain == "source":
-
-        events = source_contract.events.Deposit.get_logs(
+        events = contract.events.Deposit.get_logs(
             from_block=start_block,
             to_block=latest_block
         )
@@ -79,29 +67,25 @@ def scan_blocks(chain, contract_info="contract_info.json"):
 
             print(f"[SOURCE] Deposit detected: {token}, {recipient}, {amount}")
 
-            # CALL DESTINATION wrap()
+            dest = get_contract_info("destination", contract_info)
+            dest_contract = w3.eth.contract(
+                address=dest["address"],
+                abi=dest["abi"]
+            )
+
             tx = dest_contract.functions.wrap(
                 token,
                 recipient,
                 amount
-            ).build_transaction({
-                "from": w3.eth.accounts[0],
-                "nonce": w3.eth.get_transaction_count(w3.eth.accounts[0]),
-                "gas": 3000000,
-                "gasPrice": w3.eth.gas_price
-            })
+            ).transact()
 
-            signed_tx = w3.eth.account.sign_transaction(tx, private_key="YOUR_PRIVATE_KEY")
-            tx_hash = w3.eth.send_raw_transaction(signed_tx.rawTransaction)
-
-            print(f"[DEST] wrap() sent: {tx_hash.hex()}")
+            print(f"[DEST] wrap tx sent: {tx.hex()}")
 
     # =========================
-    # DESTINATION CHAIN (BNB)
+    # DESTINATION CHAIN LOGIC
     # =========================
-    elif chain == "destination":
-
-        events = dest_contract.events.Unwrap.get_logs(
+    if chain == "destination":
+        events = contract.events.Unwrap.get_logs(
             from_block=start_block,
             to_block=latest_block
         )
@@ -113,19 +97,18 @@ def scan_blocks(chain, contract_info="contract_info.json"):
 
             print(f"[DEST] Unwrap detected: {token}, {recipient}, {amount}")
 
-            # CALL SOURCE withdraw()
-            tx = source_contract.functions.withdraw(
+            src = get_contract_info("source", contract_info)
+            src_contract = w3.eth.contract(
+                address=src["address"],
+                abi=src["abi"]
+            )
+
+            tx = src_contract.functions.withdraw(
                 token,
                 recipient,
                 amount
-            ).build_transaction({
-                "from": w3.eth.accounts[0],
-                "nonce": w3.eth.get_transaction_count(w3.eth.accounts[0]),
-                "gas": 3000000,
-                "gasPrice": w3.eth.gas_price
-            })
+            ).transact()
 
-            signed_tx = w3.eth.account.sign_transaction(tx, private_key="YOUR_PRIVATE_KEY")
-            tx_hash = w3.eth.send_raw_transaction(signed_tx.rawTransaction)
+            print(f"[SOURCE] withdraw tx sent: {tx.hex()}")
 
-            print(f"[SOURCE] withdraw() sent: {tx_hash.hex()}")
+    return 1
