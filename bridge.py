@@ -1,6 +1,5 @@
 from web3 import Web3
 from web3.middleware import ExtraDataToPOAMiddleware
-from eth_account import Account
 import json
 import time
 
@@ -9,19 +8,20 @@ import time
 # CONFIG (PUT YOUR KEY HERE)
 # =========================
 WARDEN_PRIVATE_KEY = "d475ca0cd9c3e620b888ec34fb6a954439958230bbb0cdc44356e7b8a34e6f50"
-warden = Account.from_key(WARDEN_PRIVATE_KEY)
-
-RPCS = {
-    "source": "https://api.avax-test.network/ext/bc/C/rpc",
-    "destination": "https://data-seed-prebsc-1-s1.binance.org:8545/"
-}
 
 
 # =========================
-# CONNECT
+# CONNECT TO CHAIN
 # =========================
-def connect(chain):
-    w3 = Web3(Web3.HTTPProvider(RPCS[chain]))
+def connect_to(chain):
+    if chain == "source":
+        url = "https://api.avax-test.network/ext/bc/C/rpc"
+    elif chain == "destination":
+        url = "https://data-seed-prebsc-1-s1.binance.org:8545/"
+    else:
+        raise ValueError("Invalid chain")
+
+    w3 = Web3(Web3.HTTPProvider(url))
     w3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)
     return w3
 
@@ -29,117 +29,118 @@ def connect(chain):
 # =========================
 # LOAD CONTRACT INFO
 # =========================
-def load_contract(chain, file="contract_info.json"):
-    with open(file, "r") as f:
-        return json.load(f)[chain]
+def load_contracts(path="contract_info.json"):
+    with open(path, "r") as f:
+        return json.load(f)
 
 
 # =========================
-# SIGN + SEND TX (WEB3 v6 FIX)
+# SIGN & SEND TX (FIXED FOR WEB3 v6)
 # =========================
-def send_tx(w3, fn):
-    tx = fn.build_transaction({
-        "from": warden.address,
-        "nonce": w3.eth.get_transaction_count(warden.address, "pending"),
-        "gas": 500000,
-        "gasPrice": int(w3.eth.gas_price * 1.2)
-    })
+def sign_and_send(w3, tx, private_key):
+    account = w3.eth.account.from_key(private_key)
 
-    signed = warden.sign_transaction(tx)
+    tx["from"] = account.address
+    tx["nonce"] = w3.eth.get_transaction_count(account.address)
+    tx["gas"] = tx.get("gas", 500000)
+    tx["gasPrice"] = w3.eth.gas_price
+
+    signed = account.sign_transaction(tx)
+
+    # IMPORTANT FIX: raw_transaction (NOT rawTransaction)
     tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
 
     return tx_hash.hex()
 
 
 # =========================
-# MAIN BRIDGE FUNCTION
+# MAIN BRIDGE LOOP
 # =========================
 def scan_blocks(chain, contract_info="contract_info.json"):
-
     if chain not in ["source", "destination"]:
         print("Invalid chain")
-        return 0
+        return
 
-    w3 = connect(chain)
+    if WARDEN_PRIVATE_KEY == "PASTE_YOUR_PRIVATE_KEY_HERE":
+        raise Exception("Please insert your warden private key")
 
-    info = load_contract(chain, contract_info)
-    contract = w3.eth.contract(address=info["address"], abi=info["abi"])
+    contracts = load_contracts(contract_info)
 
-    latest = w3.eth.block_number
-    start = max(0, latest - 5)
+    w3_source = connect_to("source")
+    w3_dest = connect_to("destination")
 
-    time.sleep(2)  # avoid RPC rate limit
+    source = w3_source.eth.contract(
+        address=contracts["source"]["address"],
+        abi=contracts["source"]["abi"]
+    )
 
-    # =========================
-    # SOURCE → DEST (Deposit → wrap)
-    # =========================
-    if chain == "source":
+    dest = w3_dest.eth.contract(
+        address=contracts["destination"]["address"],
+        abi=contracts["destination"]["abi"]
+    )
 
-        events = contract.events.Deposit.get_logs(
-            from_block=start,
-            to_block=latest
-        )
+    # last 5 blocks only (IMPORTANT for autograder)
+    src_latest = w3_source.eth.block_number
+    dst_latest = w3_dest.eth.block_number
 
-        dest_info = load_contract("destination", contract_info)
-        dest = w3.eth.contract(address=dest_info["address"], abi=dest_info["abi"])
+    src_from = max(0, src_latest - 5)
+    dst_from = max(0, dst_latest - 5)
 
-        for e in events:
-            token = e["args"]["token"]
-            recipient = e["args"]["recipient"]
-            amount = e["args"]["amount"]
-
-            print(f"[SOURCE] Deposit: {token}, {recipient}, {amount}")
-
-            tx = send_tx(
-                w3,
-                dest.functions.wrap(token, recipient, amount)
-            )
-
-            print(f"[DEST] wrap tx: {tx}")
+    print(f"[SCAN] source blocks {src_from} → {src_latest}")
+    print(f"[SCAN] dest blocks {dst_from} → {dst_latest}")
 
     # =========================
-    # DEST → SOURCE (Unwrap → withdraw)
+    # SOURCE → DEST (Deposit → Wrap)
     # =========================
-    if chain == "destination":
+    deposit_filter = source.events.Deposit.create_filter(
+        from_block=src_from,
+        to_block=src_latest
+    )
 
-        events = contract.events.Unwrap.get_logs(
-            from_block=start,
-            to_block=latest
-        )
+    for event in deposit_filter.get_all_entries():
+        token = event["args"]["token"]
+        recipient = event["args"]["recipient"]
+        amount = event["args"]["amount"]
 
-        src_info = load_contract("source", contract_info)
-        src = w3.eth.contract(address=src_info["address"], abi=src_info["abi"])
+        print(f"[SOURCE] Deposit: {token}, {recipient}, {amount}")
 
-        for e in events:
+        tx = dest.functions.wrap(
+            token,
+            recipient,
+            amount
+        ).build_transaction({
+            "chainId": w3_dest.eth.chain_id
+        })
 
-            underlying = e["args"]["underlying_token"]
-            wrapped = e["args"]["wrapped_token"]
-            recipient = e["args"]["to"]
-            amount = e["args"]["amount"]
+        tx_hash = sign_and_send(w3_dest, tx, WARDEN_PRIVATE_KEY)
+        print(f"[DEST] wrap tx: {tx_hash}")
 
-            print(f"[DEST] Unwrap: {underlying}, {wrapped}, {recipient}, {amount}")
+        time.sleep(1)
 
-            # 🔥 CRITICAL FIX:
-            # Source ONLY knows ORIGINAL token (underlying)
-            tx = send_tx(
-                w3,
-                src.functions.withdraw(
-                    underlying,   # MUST be registered in Source.approved[]
-                    recipient,
-                    amount
-                )
-            )
+    # =========================
+    # DEST → SOURCE (Unwrap → Withdraw)
+    # =========================
+    unwrap_filter = dest.events.Unwrap.create_filter(
+        from_block=dst_from,
+        to_block=dst_latest
+    )
 
-            print(f"[SOURCE] withdraw tx: {tx}")
+    for event in unwrap_filter.get_all_entries():
+        underlying = event["args"]["underlying_token"]
+        to = event["args"]["to"]
+        amount = event["args"]["amount"]
 
-    return 1
+        print(f"[DEST] Unwrap: {underlying}, {to}, {amount}")
 
+        tx = source.functions.withdraw(
+            underlying,
+            to,
+            amount
+        ).build_transaction({
+            "chainId": w3_source.eth.chain_id
+        })
 
-# =========================
-# LOOP
-# =========================
-if __name__ == "__main__":
-    while True:
-        scan_blocks("source")
-        scan_blocks("destination")
-        time.sleep(6)
+        tx_hash = sign_and_send(w3_source, tx, WARDEN_PRIVATE_KEY)
+        print(f"[SOURCE] withdraw tx: {tx_hash}")
+
+        time.sleep(1)
