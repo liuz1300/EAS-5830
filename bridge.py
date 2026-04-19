@@ -34,7 +34,7 @@ def get_contract_info(chain, file="contract_info.json"):
 # WARDEN SETUP
 # =========================
 # Put your private key here OR use env var
-WARDEN_PRIVATE_KEY = "YOUR_PRIVATE_KEY_HERE"
+WARDEN_PRIVATE_KEY = "d475ca0cd9c3e620b888ec34fb6a954439958230bbb0cdc44356e7b8a34e6f50"
 warden = Account.from_key(WARDEN_PRIVATE_KEY)
 
 
