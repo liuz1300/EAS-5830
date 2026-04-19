@@ -6,7 +6,7 @@ import time
 
 
 # =========================
-# CONFIG
+# CONFIG (PUT YOUR KEY HERE)
 # =========================
 WARDEN_PRIVATE_KEY = "d475ca0cd9c3e620b888ec34fb6a954439958230bbb0cdc44356e7b8a34e6f50"
 warden = Account.from_key(WARDEN_PRIVATE_KEY)
@@ -18,7 +18,7 @@ RPCS = {
 
 
 # =========================
-# CONNECTION
+# CONNECT
 # =========================
 def connect(chain):
     w3 = Web3(Web3.HTTPProvider(RPCS[chain]))
@@ -29,7 +29,7 @@ def connect(chain):
 # =========================
 # LOAD CONTRACT INFO
 # =========================
-def load_info(chain, file="contract_info.json"):
+def load_contract(chain, file="contract_info.json"):
     with open(file, "r") as f:
         return json.load(f)[chain]
 
@@ -58,20 +58,20 @@ def scan_blocks(chain, contract_info="contract_info.json"):
 
     if chain not in ["source", "destination"]:
         print("Invalid chain")
-        return
+        return 0
 
     w3 = connect(chain)
 
-    info = load_info(chain, contract_info)
+    info = load_contract(chain, contract_info)
     contract = w3.eth.contract(address=info["address"], abi=info["abi"])
 
     latest = w3.eth.block_number
     start = max(0, latest - 5)
 
-    time.sleep(2)  # small RPC throttle protection
+    time.sleep(2)  # avoid RPC rate limit
 
     # =========================
-    # SOURCE -> DEST (Deposit -> wrap)
+    # SOURCE → DEST (Deposit → wrap)
     # =========================
     if chain == "source":
 
@@ -80,7 +80,7 @@ def scan_blocks(chain, contract_info="contract_info.json"):
             to_block=latest
         )
 
-        dest_info = load_info("destination", contract_info)
+        dest_info = load_contract("destination", contract_info)
         dest = w3.eth.contract(address=dest_info["address"], abi=dest_info["abi"])
 
         for e in events:
@@ -98,7 +98,7 @@ def scan_blocks(chain, contract_info="contract_info.json"):
             print(f"[DEST] wrap tx: {tx}")
 
     # =========================
-    # DEST -> SOURCE (Unwrap -> withdraw)
+    # DEST → SOURCE (Unwrap → withdraw)
     # =========================
     if chain == "destination":
 
@@ -107,7 +107,7 @@ def scan_blocks(chain, contract_info="contract_info.json"):
             to_block=latest
         )
 
-        src_info = load_info("source", contract_info)
+        src_info = load_contract("source", contract_info)
         src = w3.eth.contract(address=src_info["address"], abi=src_info["abi"])
 
         for e in events:
@@ -119,9 +119,15 @@ def scan_blocks(chain, contract_info="contract_info.json"):
 
             print(f"[DEST] Unwrap: {underlying}, {wrapped}, {recipient}, {amount}")
 
+            # 🔥 CRITICAL FIX:
+            # Source ONLY knows ORIGINAL token (underlying)
             tx = send_tx(
                 w3,
-                src.functions.withdraw(underlying, recipient, amount)
+                src.functions.withdraw(
+                    underlying,   # MUST be registered in Source.approved[]
+                    recipient,
+                    amount
+                )
             )
 
             print(f"[SOURCE] withdraw tx: {tx}")
@@ -130,7 +136,7 @@ def scan_blocks(chain, contract_info="contract_info.json"):
 
 
 # =========================
-# RUN LOOP
+# LOOP
 # =========================
 if __name__ == "__main__":
     while True:
