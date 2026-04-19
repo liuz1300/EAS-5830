@@ -1,27 +1,14 @@
 from web3 import Web3
-from web3.providers.rpc import HTTPProvider
 from web3.middleware import ExtraDataToPOAMiddleware
 from pathlib import Path
 import json
 import pandas as pd
 import time
 
-# ================= LOAD CONTRACT INFO =================
-
-with open("contract_info.json") as f:
-    data = json.load(f)
-
-SOURCE_ADDRESS = Web3.to_checksum_address(data["source"]["address"])
-DEST_ADDRESS = Web3.to_checksum_address(data["destination"]["address"])
-
-SOURCE_ABI = data["source"]["abi"]
-DEST_ABI = data["destination"]["abi"]
-
 # ================= WALLET CONFIG =================
 
 PRIVATE_KEY = "d475ca0cd9c3e620b888ec34fb6a954439958230bbb0cdc44356e7b8a34e6f50"
-ACCOUNT = "0xbA52AeFe6Cb8da87dfc0F60E3A916f957060e491"
-ACCOUNT = Web3.to_checksum_address(ACCOUNT)
+ACCOUNT = Web3.to_checksum_address("0xbA52AeFe6Cb8da87dfc0F60E3A916f957060e491")
 
 # ================= RPCS =================
 
@@ -39,10 +26,10 @@ def get_w3(chain):
     return w3
 
 
-def send_tx(w3, contract_fn):
+def send_tx(w3, fn):
     nonce = w3.eth.get_transaction_count(ACCOUNT)
 
-    tx = contract_fn.build_transaction({
+    tx = fn.build_transaction({
         "from": ACCOUNT,
         "nonce": nonce,
         "gas": 300000,
@@ -52,121 +39,119 @@ def send_tx(w3, contract_fn):
     signed = w3.eth.account.sign_transaction(tx, PRIVATE_KEY)
     tx_hash = w3.eth.send_raw_transaction(signed.rawTransaction)
 
-    print("TX SENT:", tx_hash.hex())
+    print("[TX SENT]", tx_hash.hex())
     return tx_hash.hex()
 
 
-# ================= EVENT HANDLERS =================
+# ================= REQUIRED FUNCTION =================
 
-def handle_deposit(event):
-    print("[EVENT] Deposit detected → calling wrap()")
+def scan_blocks(chain, contract_info="contract_info.json"):
 
-    token = Web3.to_checksum_address(event["args"]["token"])
-    recipient = Web3.to_checksum_address(event["args"]["recipient"])
-    amount = int(event["args"]["amount"])
+    with open(contract_info) as f:
+        data = json.load(f)
 
-    w3 = get_w3("bsc")  # destination chain
-    contract = w3.eth.contract(address=DEST_ADDRESS, abi=DEST_ABI)
+    source_addr = Web3.to_checksum_address(data["source"]["address"])
+    dest_addr = Web3.to_checksum_address(data["destination"]["address"])
 
-    fn = contract.functions.wrap(token, recipient, amount)
-    send_tx(w3, fn)
-
-
-def handle_unwrap(event):
-    print("[EVENT] Unwrap detected → calling withdraw()")
-
-    token = Web3.to_checksum_address(event["args"]["underlying_token"])
-    recipient = Web3.to_checksum_address(event["args"]["to"])
-    amount = int(event["args"]["amount"])
-
-    w3 = get_w3("avax")  # source chain
-    contract = w3.eth.contract(address=SOURCE_ADDRESS, abi=SOURCE_ABI)
-
-    fn = contract.functions.withdraw(token, recipient, amount)
-    send_tx(w3, fn)
-
-
-# ================= REQUIRED FUNCTION (GRADER NEEDS THIS) =================
-
-def scan_blocks(chain, start_block, end_block, contract_address, eventfile='deposit_logs.csv'):
-    """
-    Reads Deposit events AND triggers bridge actions.
-    """
+    source_abi = data["source"]["abi"]
+    dest_abi = data["destination"]["abi"]
 
     w3 = get_w3(chain)
 
-    abi = SOURCE_ABI if chain == "avax" else DEST_ABI
-    contract = w3.eth.contract(address=contract_address, abi=abi)
-
     rows = []
 
-    print(f"[SCAN] {chain} blocks {start_block} → {end_block}")
+    # ================= SOURCE CHAIN (Deposit) =================
+    if chain == "avax":
 
-    for block_num in range(start_block, end_block + 1):
+        contract = w3.eth.contract(address=source_addr, abi=source_abi)
+        event_filter = contract.events.Deposit.create_filter(from_block="latest")
 
-        # -------- SOURCE CHAIN (Deposit) --------
-        if chain == "avax":
-            event_filter = contract.events.Deposit.create_filter(
-                from_block=block_num,
-                to_block=block_num
-            )
+        for event in event_filter.get_new_entries():
 
-            events = event_filter.get_all_entries()
+            rows.append(parse_event(event, chain))
 
-            for event in events:
-                rows.append(parse_event(event, chain, contract_address))
-                handle_deposit(event)   # 🔥 AUGMENTATION
+            handle_deposit(event, dest_addr, dest_abi)
 
-        # -------- DESTINATION CHAIN (Unwrap) --------
-        else:
-            event_filter = contract.events.Unwrap.create_filter(
-                from_block=block_num,
-                to_block=block_num
-            )
+    # ================= DESTINATION CHAIN (Unwrap) =================
+    else:
 
-            events = event_filter.get_all_entries()
+        contract = w3.eth.contract(address=dest_addr, abi=dest_abi)
+        event_filter = contract.events.Unwrap.create_filter(from_block="latest")
 
-            for event in events:
-                rows.append(parse_event(event, chain, contract_address))
-                handle_unwrap(event)    # 🔥 AUGMENTATION
+        for event in event_filter.get_new_entries():
+
+            rows.append(parse_event(event, chain))
+
+            handle_unwrap(event, source_addr, source_abi)
 
     # ================= SAVE CSV =================
 
     if rows:
         df = pd.DataFrame(rows)
-        file_path = Path(eventfile)
+        file_path = Path("deposit_logs.csv")
 
         if file_path.exists():
-            df.to_csv(file_path, mode='a', header=False, index=False)
+            df.to_csv(file_path, mode="a", header=False, index=False)
         else:
-            df.to_csv(file_path, mode='w', header=True, index=False)
+            df.to_csv(file_path, mode="w", header=True, index=False)
 
-        print(f"Saved {len(rows)} events to {eventfile}")
-    else:
-        print("No events found.")
+        print(f"[CSV] Saved {len(rows)} events")
+
+
+# ================= EVENT HANDLERS =================
+
+def handle_deposit(event, dest_addr, dest_abi):
+
+    print("[EVENT] Deposit → wrap()")
+
+    token = Web3.to_checksum_address(event["args"]["token"])
+    recipient = Web3.to_checksum_address(event["args"]["recipient"])
+    amount = int(event["args"]["amount"])
+
+    w3 = get_w3("bsc")
+    contract = w3.eth.contract(address=dest_addr, abi=dest_abi)
+
+    fn = contract.functions.wrap(token, recipient, amount)
+    send_tx(w3, fn)
+
+
+def handle_unwrap(event, source_addr, source_abi):
+
+    print("[EVENT] Unwrap → withdraw()")
+
+    token = Web3.to_checksum_address(event["args"]["underlying_token"])
+    recipient = Web3.to_checksum_address(event["args"]["to"])
+    amount = int(event["args"]["amount"])
+
+    w3 = get_w3("avax")
+    contract = w3.eth.contract(address=source_addr, abi=source_abi)
+
+    fn = contract.functions.withdraw(token, recipient, amount)
+    send_tx(w3, fn)
 
 
 # ================= EVENT PARSER =================
 
-def parse_event(event, chain, contract_address):
+def parse_event(event, chain):
+    args = event["args"]
+
     return {
         "chain": chain,
-        "token": event["args"].get("token") or event["args"].get("underlying_token"),
-        "recipient": event["args"].get("recipient") or event["args"].get("to"),
-        "amount": int(event["args"]["amount"]),
-        "txHash": event["transactionHash"].hex(),
-        "contract": contract_address
+        "token": args.get("token") or args.get("underlying_token"),
+        "recipient": args.get("recipient") or args.get("to"),
+        "amount": int(args["amount"]),
+        "txHash": event["transactionHash"].hex()
     }
 
 
-# ================= OPTIONAL LIVE LISTENER =================
+# ================= OPTIONAL RUN LOOP =================
 
 def listen():
-    print("Live listener running...")
+    print("Listening...")
 
     while True:
-        scan_blocks("avax", "latest", "latest", SOURCE_ADDRESS)
-        scan_blocks("bsc", "latest", "latest", DEST_ADDRESS)
+        scan_blocks("avax")
+        scan_blocks("bsc")
         time.sleep(5)
 
 
