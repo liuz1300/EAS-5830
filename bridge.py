@@ -24,7 +24,7 @@ def get_w3(chain):
 
 
 # ===== LOAD FULL ABI =====
-with open("contracts.json") as f:
+with open("contract_info.json") as f:
     data = json.load(f)
 
 SOURCE_ABI = data["source"]["abi"]
